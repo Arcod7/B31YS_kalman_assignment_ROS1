@@ -21,11 +21,15 @@ class SimpleKalmanFilterNode:
 
         # Initial State: [x, y, yaw]
         self.x = np.zeros((3,1))
-        self.P = np.eye(3) * 0.1
+        self.P = np.eye(3) * 0.1  # Initial covariance
+        rospy.loginfo(f"Initial state: {self.x}")
+        rospy.loginfo(f"Initial covariance: {self.P}")
 
         # Noise Covariances
-        self.Q = 0 # process noise. What should be the values here? 
-        self.R = 0 # GPS measurement noise
+        # Process noise - uncertainty in motion model
+        self.Q = np.diag([0.1, 0.1, 0.05])  # [x, y, yaw] process noise
+        # GPS measurement noise - uncertainty in GPS measurements
+        self.R = np.diag([0.5, 0.5])  # [x, y] measurement noise
 
         # Latest command velocities
         self.vx = 0.0
@@ -52,24 +56,99 @@ class SimpleKalmanFilterNode:
             [msg.pose.pose.position.x],
             [msg.pose.pose.position.y]
         ])
+    
+    def predict_state(self):
+        """
+        Predict the next state based on current state x and control input u.
+        Named g in the lecture.
+        x: current state [x, y, yaw]
+        u: control input [vx, vy, yaw_rate]
+        """
+        u = np.array([self.vx, self.vy, self.yaw_rate])
+        cos_yaw = np.cos(self.x[2,0])
+        sin_yaw = np.sin(self.x[2,0])
+
+        x_t = self.x[0,0] + u[0] * self.dt * cos_yaw - u[1] * self.dt * sin_yaw
+        y_t = self.x[1,0] + u[0] * self.dt * sin_yaw + u[1] * self.dt * cos_yaw
+        yaw_t = self.x[2,0] + u[2] * self.dt
+        return np.array([[x_t],
+                         [y_t],
+                         [yaw_t]])
+
+    def compute_jacobian_G(self):
+        """
+        Compute Jacobian of motion model g with respect to state.
+        G = dg/dx where g is the motion model.
+        """
+        cos_yaw = np.cos(self.x[2,0])
+        sin_yaw = np.sin(self.x[2,0])
+        
+        G = np.array([
+            [1, 0, -self.vx * self.dt * sin_yaw - self.vy * self.dt * cos_yaw],
+            [0, 1,  self.vx * self.dt * cos_yaw - self.vy * self.dt * sin_yaw],
+            [0, 0, 1]
+        ])
+        return G
 
     def update_kalman(self, event):
         """
         This is the main Kalman filter loop. In this function
-        you should do a prediction plus a correction step. """
-        # --- Prediction ---
-        x_pred = np.zeros((3,1))
+        you should do a prediction plus a correction step. 
+        
+        Pseudo-code:
+        xt = g(ut, xt-1)
+        Pt = Gt*Pt-1*Gt' + R
+        Kt = Pt*Ht'*(Ht*Pt*Ht' + Q)^-1
+        xt' = xt + Kt*(z - h(xt))
+        Pt' = (I - Kt*Ht)*Pt
 
-	# what goes here??? 
-	
-        self.x = x_pred
-        self.P = P_pred
+        Note: R and Q are probably inverted
 
-        # --- Correction ---
         
-        
-        self.x = 0 # what should go here? 
-        
+        Pseudo-code found [online](https://www.researchgate.net/publication/342479702_Accurate_indoor_positioning_with_ultra-wide_band_sensors/figures?lo=1):
+        Inputs: x_est, P_est, z, Q, R
+        Outputs: x_updated, P_updated
+        Step 1: Initialize G matrix and H matrix
+        Step 2: Predict state vector and covariance
+            x_pred = g(u, x_est)
+            P_pred = G * P_est * GT + Q
+        Step 3: Estimation
+            S = H * P_pred * HT + R
+        Step 4: Compute Kalman gain factor
+            K_gain = P_pred * HT * S^-1
+        Step 5: Correction based on observation
+            x_updated = x_pred + K_gain * (z - H * x_pred)
+            P_updated = P_pred - K_gain * H * P_pred 
+                For simplicity, changed to -> P_updated = (I - K_gain * H) * P_pred
+        Step 6: Return x_updated, P_updated
+        """
+        # --- Step1: Init ---
+        G = self.compute_jacobian_G() # Jacobian of motion model
+        H = np.array([[1, 0, 0],
+                      [0, 1, 0]])  # Measurement model
+        I = np.eye(3)
+
+        # --- Step2: Prediction ---
+        x_pred = self.predict_state()
+        P_pred = G @ self.P @ G.T + self.Q
+
+        if self.gps is not None:
+            # --- Step3: Estimation ---
+            S = H @ P_pred @ H.T + self.R
+
+            # --- Step4: Compute Kalman Gain ---
+            K_gain = P_pred @ H.T @ np.linalg.inv(S)
+
+            # --- Step5: Correction ---
+            rospy.logdebug(f"GPS measurement: {self.gps.T}")
+            rospy.logdebug(f"Predicted state before correction: {self.x.T}")
+            self.x = x_pred + K_gain @ (self.gps - H @ x_pred)
+            self.P = (I - K_gain @ H) @ P_pred
+            rospy.logdebug(f"Corrected state: {self.x.T}")
+        else:
+            rospy.logwarn("No GPS measurement available, using prediction only")
+            self.x = x_pred
+            self.P = P_pred
 
         self.publish_estimate()
 
