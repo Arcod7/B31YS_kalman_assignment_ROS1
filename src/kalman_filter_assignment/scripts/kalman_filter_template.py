@@ -15,6 +15,7 @@ class SimpleKalmanFilterNode:
         #subscriber
         rospy.Subscriber('/cmd_vel', Twist, self.cmd_vel_callback)
         rospy.Subscriber('/fake_gps', Odometry, self.gps_callback)
+        rospy.Subscriber('/odom1', Odometry, self.odom_callback)
 
         # Publisher 
         self.pub = rospy.Publisher('/kalman_estimate', Odometry, queue_size=10)
@@ -29,7 +30,8 @@ class SimpleKalmanFilterNode:
         # Process noise - uncertainty in motion model
         self.Q = np.diag([0.1, 0.1, 0.05])  # [x, y, yaw] process noise
         # GPS measurement noise - uncertainty in GPS measurements
-        self.R = np.diag([0.5, 0.5])  # [x, y] measurement noise
+        self.R_gps = np.diag([0.5, 0.5, 0.2])  # [x, y, yaw] measurement noise
+        self.R_odom = np.diag([30, 30, 10])  # [x, y, yaw] odom measurement noise
 
         # Latest command velocities
         self.vx = 0.0
@@ -38,6 +40,9 @@ class SimpleKalmanFilterNode:
 
         # Latest GPS measurement
         self.gps = None
+
+        # Latest IMU/Odom data
+        self.odom = None
 
         # Timer for Kalman update
         rospy.Timer(rospy.Duration(self.dt), self.update_kalman)
@@ -54,8 +59,31 @@ class SimpleKalmanFilterNode:
         """Store the latest GPS measurement."""
         self.gps = np.array([
             [msg.pose.pose.position.x],
-            [msg.pose.pose.position.y]
+            [msg.pose.pose.position.y],
+            [2 * np.arctan2(msg.pose.pose.orientation.z, msg.pose.pose.orientation.w)]  # Yaw from quaternion
         ])
+
+    def odom_callback(self, msg):
+        """Store the latest odom measurement."""
+        self.odom = np.array([
+            [msg.pose.pose.position.x],
+            [msg.pose.pose.position.y],
+            [2 * np.arctan2(msg.pose.pose.orientation.z, msg.pose.pose.orientation.w)]  # Yaw from quaternion
+        ])
+
+    def measurement_update(self, z, R):
+        I = np.eye(3)
+        H = np.eye(3)
+
+        # --- Step3: Estimation ---
+        S = H @ self.P @ H.T + R
+
+        # --- Step4: Compute Kalman Gain ---
+        K_gain = self.P @ H.T @ np.linalg.inv(S)
+
+        self.x = self.x + K_gain @ (z - H @ self.x)
+        # Joseph form for stability:
+        self.P = (I - K_gain @ H) @ self.P @ (I - K_gain @ H).T + K_gain @ R @ K_gain.T
     
     def predict_state(self):
         """
@@ -125,30 +153,24 @@ class SimpleKalmanFilterNode:
         # --- Step1: Init ---
         G = self.compute_jacobian_G() # Jacobian of motion model
         H = np.array([[1, 0, 0],
-                      [0, 1, 0]])  # Measurement model
-        I = np.eye(3)
+                      [0, 1, 0],
+                      [0, 0, 1]])  # Measurement model
 
         # --- Step2: Prediction ---
         x_pred = self.predict_state()
         P_pred = G @ self.P @ G.T + self.Q
 
+        self.x = x_pred
+        self.P = P_pred
         if self.gps is not None:
-            # --- Step3: Estimation ---
-            S = H @ P_pred @ H.T + self.R
-
-            # --- Step4: Compute Kalman Gain ---
-            K_gain = P_pred @ H.T @ np.linalg.inv(S)
-
             # --- Step5: Correction ---
             rospy.logdebug(f"GPS measurement: {self.gps.T}")
             rospy.logdebug(f"Predicted state before correction: {self.x.T}")
-            self.x = x_pred + K_gain @ (self.gps - H @ x_pred)
-            self.P = (I - K_gain @ H) @ P_pred
+            self.measurement_update(self.gps, self.R_gps)
+            self.measurement_update(self.odom, self.R_odom)
             rospy.logdebug(f"Corrected state: {self.x.T}")
         else:
             rospy.logwarn("No GPS measurement available, using prediction only")
-            self.x = x_pred
-            self.P = P_pred
 
         self.publish_estimate()
 
