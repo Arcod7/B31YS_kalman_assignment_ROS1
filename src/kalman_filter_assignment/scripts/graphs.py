@@ -43,8 +43,6 @@ def main():
     gps_t, gps_x, gps_y = [], [], []
     kal_t, kal_x, kal_y = [], [], []
     gt_t, gt_x, gt_y = [], [], []
-    encoder_t, encoder_x, encoder_y = [], [], []
-    cmdvel_t, cmdvel_x, cmdvel_y, cmdvel_theta = [], [], [], []
 
     t0 = None
 
@@ -70,12 +68,6 @@ def main():
             gt_y.append(y)
             gt_t.append(time_in_seconds(t0, t))
 
-        elif topic == ENCODER_TOPIC:
-            x, y = extract_xy_from_odom(msg)
-            encoder_x.append(x)
-            encoder_y.append(y)
-            encoder_t.append(time_in_seconds(t0, t))
-
     bag.close()
 
     #   PLOT 1: 2D TRAJECTORY (X vs Y)
@@ -83,7 +75,6 @@ def main():
     plt.plot(gps_x, gps_y, "o", markersize=3, label="GPS (sparse)")
     plt.plot(kal_x, kal_y, "-", linewidth=1.5, label="Kalman (smooth)")
     plt.plot(gt_x, gt_y, "-", linewidth=1.5, label="Ground Truth")
-    # plt.plot(encoder_x, encoder_y, "-", linewidth=0.2, label="Encoder")
     plt.xlabel("X position (m)")
     plt.ylabel("Y position (m)")
     plt.title("2D Trajectory Comparison")
@@ -101,7 +92,19 @@ def main():
     plt.legend()
     plt.grid(True)
 
-    #   PLOT 3: ERROR in X POSITION vs TIME
+
+    #   PLOT 3: Y POSITION vs TIME
+    plt.figure()
+    plt.plot(gps_t, gps_y, "o", markersize=3, label="GPS Y")
+    plt.plot(kal_t, kal_y, "-", linewidth=1.5, label="Kalman Y")
+    plt.plot(gt_t, gt_y, "-", linewidth=1.5, label="Ground Truth Y")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Y position (m)")
+    plt.title("Y Position Over Time")
+    plt.legend()
+    plt.grid(True)
+
+    #   PLOT 4: ERROR in X POSITION vs TIME
     plt.figure()
     # Interpolate ground truth for error calculation
     gt_x_interp = np.interp(kal_t, gt_t, gt_x)
