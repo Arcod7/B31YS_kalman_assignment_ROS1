@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<launch>
+
+
+  <!-- Load the Gazebo + RViz environment -->
+  <include file="$(find rosbot_bringup)/launch/rosbot_empty_rviz.launch"> </include>
+
+</launch>
+

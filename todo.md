@@ -23,3 +23,10 @@ different combinaison of sensors
 
 We can pick imu gyroscope as the ground truth for orientation
 and use odometry velocity to predict position and correct it with gps
+
+# Report
+
+- Pseudo code
+- Why using encoders for yaw_rate
+- Graph of square error
+- Graph of position

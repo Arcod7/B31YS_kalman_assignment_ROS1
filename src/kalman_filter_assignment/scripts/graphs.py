@@ -1,21 +1,37 @@
 #!/usr/bin/env python3
 import rosbag
-import rospy
 import numpy as np
 import matplotlib.pyplot as plt
-
-from nav_msgs.msg import Odometry
 
 import os
 import re
 from datetime import datetime
+from dataclasses import dataclass
+from typing import List, Dict
+
 
 def get_latest_robot_position_file(dir):
-    files=[f for f in os.listdir(dir) if re.match(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.bag$",f)]
-    return max(files, key=lambda f: datetime.strptime(f[:-4], "%Y-%m-%d-%H-%M-%S")) if files else None
+    files = [
+        f
+        for f in os.listdir(dir)
+        if re.match(r"^\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}\.bag$", f)
+    ]
+    return (
+        max(files, key=lambda f: datetime.strptime(f[:-4], "%Y-%m-%d-%H-%M-%S"))
+        if files
+        else None
+    )
+
 
 # Config
 BAG_PATH = "bags/" + get_latest_robot_position_file("bags")
+BAG_PATH = "bags/result_config.bag"
+
+blacklist = [
+    "/kalman_cmd",
+    # "/kalman_enc",
+    "/kalman_imu",
+]
 
 GPS_TOPIC = "/fake_gps"
 KALMAN_TOPIC = "/kalman_estimate"
@@ -26,12 +42,33 @@ GT_TOPIC = "/odom"
 
 DT = 0.1  # time step for cmd_vel integration
 
+
+@dataclass
+class OdomData:
+    t: List[float]
+    x: List[float]
+    y: List[float]
+    yaw: List[float]
+
+    def __init__(self):
+        self.t = []
+        self.x = []
+        self.y = []
+        self.yaw = []
+
+
 # Helpers
 def extract_xy_from_odom(msg):
-    return msg.pose.pose.position.x, msg.pose.pose.position.y
+    return (
+        msg.pose.pose.position.x,
+        msg.pose.pose.position.y,
+        msg.pose.pose.orientation.z,
+    )
+
 
 def extract_xy_from_twist(msg):
     return msg.linear.x, msg.linear.y, msg.angular.z
+
 
 def time_in_seconds(t0, t):
     return (t - t0).to_sec()
@@ -40,9 +77,15 @@ def time_in_seconds(t0, t):
 def main():
     bag = rosbag.Bag(BAG_PATH)
 
-    gps_t, gps_x, gps_y = [], [], []
-    kal_t, kal_x, kal_y = [], [], []
-    gt_t, gt_x, gt_y = [], [], []
+    gps = OdomData()
+    gt = OdomData()
+
+    all_kal: Dict[str, OdomData] = {}
+    kal_topics = [
+        topic for topic, _, _ in bag.read_messages() if topic.startswith("/kalman")
+    ]
+    for topic in kal_topics:
+        all_kal[topic] = OdomData()
 
     t0 = None
 
@@ -51,69 +94,106 @@ def main():
             t0 = t
 
         if topic == GPS_TOPIC:
-            x, y = extract_xy_from_odom(msg)
-            gps_x.append(x)
-            gps_y.append(y)
-            gps_t.append(time_in_seconds(t0, t))
+            x, y, _ = extract_xy_from_odom(msg)
+            gps.x.append(x)
+            gps.y.append(y)
+            gps.t.append(time_in_seconds(t0, t))
 
-        elif topic == KALMAN_TOPIC:
-            x, y = extract_xy_from_odom(msg)
-            kal_x.append(x)
-            kal_y.append(y)
-            kal_t.append(time_in_seconds(t0, t))
+        # elif topic == KALMAN_TOPIC:
+        #     x, y = extract_xy_from_odom(msg)
+        #     kal_x.append(x)
+        #     kal_y.append(y)
+        #     kal_t.append(time_in_seconds(t0, t))
+
+        elif topic in kal_topics:
+            x, y, yaw = extract_xy_from_odom(msg)
+            all_kal[topic].x.append(x)
+            all_kal[topic].y.append(y)
+            all_kal[topic].yaw.append(yaw)
+            all_kal[topic].t.append(time_in_seconds(t0, t))
 
         elif topic == GT_TOPIC:
-            x, y = extract_xy_from_odom(msg)
-            gt_x.append(x)
-            gt_y.append(y)
-            gt_t.append(time_in_seconds(t0, t))
+            x, y, yaw = extract_xy_from_odom(msg)
+            gt.x.append(x)
+            gt.y.append(y)
+            gt.yaw.append(yaw)
+            gt.t.append(time_in_seconds(t0, t))
 
     bag.close()
 
     #   PLOT 1: 2D TRAJECTORY (X vs Y)
-    plt.figure()
-    plt.plot(gps_x, gps_y, "o", markersize=3, label="GPS (sparse)")
-    plt.plot(kal_x, kal_y, "-", linewidth=1.5, label="Kalman (smooth)")
-    plt.plot(gt_x, gt_y, "-", linewidth=1.5, label="Ground Truth")
+    f = plt.figure()
+    f.canvas.set_window_title("2D Trajectory Comparison")
+    plt.plot(gps.x, gps.y, "o", markersize=3, label="GPS (sparse)")
+    for topic, kal in all_kal.items():
+        if topic in blacklist:
+            continue
+        plt.plot(kal.x, kal.y, "-", linewidth=1.5, label=topic)
+    plt.plot(gt.x, gt.y, "-", linewidth=1.5, label="Ground Truth")
     plt.xlabel("X position (m)")
     plt.ylabel("Y position (m)")
     plt.title("2D Trajectory Comparison")
     plt.legend()
     plt.grid(True)
 
-    #   PLOT 2: X POSITION vs TIME
-    plt.figure()
-    plt.plot(gps_t, gps_x, "o", markersize=3, label="GPS X")
-    plt.plot(kal_t, kal_x, "-", linewidth=1.5, label="Kalman X")
-    plt.plot(gt_t, gt_x, "-", linewidth=1.5, label="Ground Truth X")
-    plt.xlabel("Time (s)")
-    plt.ylabel("X position (m)")
-    plt.title("X Position Over Time")
-    plt.legend()
-    plt.grid(True)
+    # #   PLOT 2: X POSITION vs TIME
+    # plt.figure()
+    # plt.plot(gps_t, gps_x, "o", markersize=3, label="GPS X")
+    # plt.plot(kal_t, kal_x, "-", linewidth=1.5, label="Kalman X")
+    # plt.plot(gt_t, gt_x, "-", linewidth=1.5, label="Ground Truth X")
+    # plt.xlabel("Time (s)")
+    # plt.ylabel("X position (m)")
+    # plt.title("X Position Over Time")
+    # plt.legend()
+    # plt.grid(True)
 
+    # #   PLOT 3: Y POSITION vs TIME
+    # plt.figure()
+    # plt.plot(gps_t, gps_y, "o", markersize=3, label="GPS Y")
+    # plt.plot(kal_t, kal_y, "-", linewidth=1.5, label="Kalman Y")
+    # plt.plot(gt_t, gt_y, "-", linewidth=1.5, label="Ground Truth Y")
+    # plt.xlabel("Time (s)")
+    # plt.ylabel("Y position (m)")
+    # plt.title("Y Position Over Time")
+    # plt.legend()
+    # plt.grid(True)
 
-    #   PLOT 3: Y POSITION vs TIME
-    plt.figure()
-    plt.plot(gps_t, gps_y, "o", markersize=3, label="GPS Y")
-    plt.plot(kal_t, kal_y, "-", linewidth=1.5, label="Kalman Y")
-    plt.plot(gt_t, gt_y, "-", linewidth=1.5, label="Ground Truth Y")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Y position (m)")
-    plt.title("Y Position Over Time")
-    plt.legend()
-    plt.grid(True)
-
-    #   PLOT 4: ERROR in X POSITION vs TIME
-    plt.figure()
+    #   PLOT 4: ERROR in EUCLIDIAN POSITION vs TIME
     # Interpolate ground truth for error calculation
-    gt_x_interp = np.interp(kal_t, gt_t, gt_x)
-    error_x = np.array(kal_x) - gt_x_interp
-    plt.plot(kal_t, error_x, "-", linewidth=1.5, label="Kalman X Error")
+    f = plt.figure()
+    f.canvas.set_window_title("Position Error Over Time")
+    for topic, kal in all_kal.items():
+        if topic in blacklist:
+            continue
+        gt_x_interp = np.interp(kal.t, gt.t, gt.x)
+        gt_y_interp = np.interp(kal.t, gt.t, gt.y)
+        error_x = np.array(kal.x) - gt_x_interp
+        error_y = np.array(kal.y) - gt_y_interp
+        error = np.sqrt(error_x**2 + error_y**2)
+        mean_error = np.mean(error)
+        plt.plot(kal.t, error, "-", linewidth=1.5, label=topic + f" (mean: {mean_error:.2f} m)")
+
+        # mean_error = np.mean(np.abs(error_x))
+    plt.title(f"Position Error Over Time (Mean Error: {mean_error:.2f} m)")
     plt.xlabel("Time (s)")
-    plt.ylabel("X Position Error (m)")
-    mean_error = np.mean(np.abs(error_x))
-    plt.title(f"X Position Error Over Time (Mean Error: {mean_error:.2f} m)")
+    plt.ylabel("Position Error (m)")
+    plt.legend()
+    plt.grid(True)
+
+    f = plt.figure()
+    f.canvas.set_window_title("Yaw Error Over Time")
+    #   PLOT 5: ERROR in YAW vs TIME
+    for topic, kal in all_kal.items():
+        if topic in blacklist:
+            continue
+        gt_yaw_interp = np.interp(kal.t, gt.t, gt.yaw)
+        error_yaw = np.array(kal.yaw) - gt_yaw_interp
+        mean_yaw_error = np.mean(np.abs(error_yaw))
+        plt.plot(kal.t, error_yaw, "-", linewidth=1.5, label=topic + f" (mean: {mean_yaw_error:.2f} rad)")
+
+    plt.xlabel("Time (s)")
+    plt.ylabel("Yaw Error (rad)")
+    plt.title("Yaw Error Over Time")
     plt.legend()
     plt.grid(True)
 
