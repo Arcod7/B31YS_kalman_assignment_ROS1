@@ -9,8 +9,6 @@ from dataclasses import dataclass
 
 @dataclass
 class KalmanFilterConfig:
-    config_name: str
-
     output_topic: str
 
     ## Noise Covariances
@@ -34,10 +32,9 @@ class KalmanFilterConfig:
 
 node_configs = [
     KalmanFilterConfig(
-        config_name="cmd",
         output_topic="/kalman_cmd",
-        Q=np.diag([0.1, 0.1, 0.05]),  # [x, y, yaw] process noise
-        R_gps=np.diag([30, 30]),  # [x, y] measurement noise
+        Q=np.diag([0.15, 0.15, 0.05]),  # [x, y, yaw] process noise
+        R_gps=np.diag([200, 200]),  # [x, y] measurement noise
         imu_weight=0.0,
         encoder_weight=0.0,
         cmdvel_weight=1.0,
@@ -47,10 +44,9 @@ node_configs = [
         use_gps=False,
     ),
     KalmanFilterConfig(
-        config_name="cmd",
         output_topic="/kalman_enc",
-        Q=np.diag([0.1, 0.1, 0.05]),  # [x, y, yaw] process noise
-        R_gps=np.diag([30, 30]),  # [x, y] measurement noise
+        Q=np.diag([0.15, 0.15, 0.05]),  # [x, y, yaw] process noise
+        R_gps=np.diag([200, 200]),  # [x, y] measurement noise
         imu_weight=0.0,
         encoder_weight=1.0,
         cmdvel_weight=0.0,
@@ -60,10 +56,21 @@ node_configs = [
         use_gps=False,
     ),
     KalmanFilterConfig(
-        config_name="cmd",
+        output_topic="/kalman_enc_gps",
+        Q=np.diag([0.15, 0.15, 0.05]),  # [x, y, yaw] process noise
+        R_gps=np.diag([200, 200]),  # [x, y] measurement noise
+        imu_weight=0.0,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=0.0,
+        cmdvel_yawrate_weight=0.0,
+        encoder_yawrate_weight=1.0,
+        use_gps=True,
+    ),
+    KalmanFilterConfig(
         output_topic="/kalman_imu",
-        Q=np.diag([0.1, 0.1, 0.05]),  # [x, y, yaw] process noise
-        R_gps=np.diag([30, 30]),  # [x, y] measurement noise
+        Q=np.diag([0.15, 0.15, 0.05]),  # [x, y, yaw] process noise
+        R_gps=np.diag([200, 200]),  # [x, y] measurement noise
         imu_weight=1.0,
         encoder_weight=0.0,
         cmdvel_weight=0.0,
@@ -73,29 +80,89 @@ node_configs = [
         use_gps=False,
     ),
     KalmanFilterConfig(
-        config_name="cmd",
-        output_topic="/kalman_full1",
-        Q=np.diag([0.1, 0.1, 0.05]),  # [x, y, yaw] process noise
-        R_gps=np.diag([20, 20]),  # [x, y] measurement noise
+        output_topic="/kalman_enc_imu",
+        Q=np.diag([0.15, 0.15, 0.05]),  # [x, y, yaw] process noise
+        R_gps=np.diag([200, 200]),  # [x, y] measurement noise
         imu_weight=0.0,
-        encoder_weight=0.8,
-        cmdvel_weight=0.2,
-        imu_yawrate_weight=0.7,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=1.0,
         cmdvel_yawrate_weight=0.0,
-        encoder_yawrate_weight=0.2,
+        encoder_yawrate_weight=0.0,
+        use_gps=False,
+    ),
+    KalmanFilterConfig(
+        output_topic="/kalman_enc_gps_imu",
+        Q=np.diag([0.20, 0.20, 0.10]),  # [x, y, yaw] process noise
+        R_gps=np.diag([1000, 1000]),  # [x, y] measurement noise
+        imu_weight=0.0,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=1.0,
+        cmdvel_yawrate_weight=0.0,
+        encoder_yawrate_weight=0.0,
+        use_gps=True,
+    ),
+
+    # Test Process Noise configs
+    KalmanFilterConfig(
+        output_topic="/kalman_full_process_0_10",
+        Q=np.diag([0.10, 0.10, 0.05]),  # [x, y, yaw] process noise
+        R_gps=np.diag([1000, 1000]),  # [x, y] measurement noise
+        imu_weight=0.0,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=1.0,
+        cmdvel_yawrate_weight=0.0,
+        encoder_yawrate_weight=0.0,
         use_gps=True,
     ),
     KalmanFilterConfig(
-        config_name="cmd",
-        output_topic="/kalman_full2",
-        Q=np.diag([0.2, 0.2, 0.1]),  # [x, y, yaw] process noise
-        R_gps=np.diag([20, 20]),  # [x, y] measurement noise
+        output_topic="/kalman_full_process_0_20",
+        Q=np.diag([0.20, 0.20, 0.1]),  # [x, y, yaw] process noise
+        R_gps=np.diag([1000, 1000]),  # [x, y] measurement noise
         imu_weight=0.0,
-        encoder_weight=0.8,
-        cmdvel_weight=0.2,
-        imu_yawrate_weight=0.7,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=1.0,
         cmdvel_yawrate_weight=0.0,
-        encoder_yawrate_weight=0.2,
+        encoder_yawrate_weight=0.0,
+        use_gps=True,
+    ),
+    KalmanFilterConfig(
+        output_topic="/kalman_full_process_0_30",
+        Q=np.diag([0.30, 0.30, 0.15]),  # [x, y, yaw] process noise
+        R_gps=np.diag([1000, 1000]),  # [x, y] measurement noise
+        imu_weight=0.0,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=1.0,
+        cmdvel_yawrate_weight=0.0,
+        encoder_yawrate_weight=0.0,
+        use_gps=True,
+    ),
+    KalmanFilterConfig(
+        output_topic="/kalman_full_process_0_05",
+        Q=np.diag([0.05, 0.05, 0.02]),  # [x, y, yaw] process noise
+        R_gps=np.diag([1000, 1000]),  # [x, y] measurement noise
+        imu_weight=0.0,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=1.0,
+        cmdvel_yawrate_weight=0.0,
+        encoder_yawrate_weight=0.0,
+        use_gps=True,
+    ),
+    KalmanFilterConfig(
+        output_topic="/kalman_full_process0_02",
+        Q=np.diag([0.02, 0.02, 0.01]),  # [x, y, yaw] process noise
+        R_gps=np.diag([200, 200]),  # [x, y] measurement noise
+        imu_weight=0.0,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=1.0,
+        cmdvel_yawrate_weight=0.0,
+        encoder_yawrate_weight=0.0,
         use_gps=True,
     ),
 ]
@@ -354,7 +421,7 @@ class SimpleKalmanFilterNode:
 if __name__ == "__main__":
     try:
         for node_config in node_configs:
-            rospy.loginfo(f"Starting Kalman Filter Node: {node_config.config_name}")
+            rospy.loginfo(f"Starting Kalman Filter Node: {node_config.output_topic}")
             node = SimpleKalmanFilterNode(config=node_config)
         rospy.spin()
     except rospy.ROSInterruptException:
