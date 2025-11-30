@@ -32,6 +32,18 @@ class KalmanFilterConfig:
 
 node_configs = [
     KalmanFilterConfig(
+        output_topic="/kalman_estimate",
+        Q=np.diag([0.20, 0.20, 0.10]),  # [x, y, yaw] process noise
+        R_gps=np.diag([1000, 1000]),  # [x, y] measurement noise
+        imu_weight=0.0,
+        encoder_weight=1.0,
+        cmdvel_weight=0.0,
+        imu_yawrate_weight=1.0,
+        cmdvel_yawrate_weight=0.0,
+        encoder_yawrate_weight=0.0,
+        use_gps=True,
+    ),
+    KalmanFilterConfig(
         output_topic="/kalman_cmd",
         Q=np.diag([0.15, 0.15, 0.05]),  # [x, y, yaw] process noise
         R_gps=np.diag([200, 200]),  # [x, y] measurement noise
